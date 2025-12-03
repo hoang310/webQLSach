@@ -4,6 +4,7 @@ const bookBorrowSchema = new mongoose.Schema({
     bookId: { type: mongoose.Schema.Types.ObjectId, ref: 'Book', required: true },
     borrowedDate: { type: Date, default: Date.now },
     dueDate: { type: Date },
-    returnedDate: { type: Date } // null nếu chưa trả
+    returnedDate: { type: Date }
 });
+
 module.exports = mongoose.model('BookBorrow', bookBorrowSchema);
