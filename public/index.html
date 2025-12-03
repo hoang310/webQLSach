@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Quản lý sách Node.js - MVVM</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <h1>Quản lý sách</h1>
+    <div id="add-form">
+        <h2>Thêm sách</h2>
+        <input type="text" id="title" placeholder="Tên sách">
+        <input type="text" id="author" placeholder="Tác giả">
+        <input type="text" id="year" placeholder="Năm xuất bản">
+        <button id="add-btn">Thêm sách</button>
+    </div>
+    <div id="search-form">
+        <input type="text" id="search-keyword" placeholder="Tìm kiếm sách...">
+        <button id="search-btn">Tìm kiếm</button>
+        <button id="showall-btn">Xem tất cả</button>
+        <button id="sort-btn">Sắp xếp theo tên</button>
+    </div>
+    <h2>Danh sách sách</h2>
+    <table id="books-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Tên</th>
+                <th>Tác giả</th>
+                <th>Năm</th>
+                <th>Thao tác</th>
+            </tr>
+        </thead>
+        <tbody id="books-tbody">
+        </tbody>
+    </table>
+    <div id="review-section" style="display:none;">
+        <h3>Đánh giá sách</h3>
+        <form id="review-form">
+            <input type="number" id="review-rating" min="1" max="5" placeholder="Số sao (1-5)" required>
+            <input type="text" id="review-comment" placeholder="Bình luận">
+            <button type="submit">Gửi đánh giá</button>
+            <button type="button" id="review-cancel">Đóng</button>
+        </form>
+        <div id="reviews-list"></div>
+    </div>
+    <hr>
+    <div id="profile-section">
+        <h2>Thông tin user & Lịch sử mượn trả</h2>
+        <label>ID User test:</label> <input type="text" id="profile-userid" value="000000000000000000000000"
+            style="width:300px"><button onclick="showProfile()">Xem lịch sử</button>
+        <div id="profile-history"></div>
+        <div id="profile-stats"></div>
+    </div>
+
+    <script>
+        // ==== ViewModel (API giao tiếp) ====
+        const BookAPI = {
+            async getBooks() {
+                const res = await fetch('/api/books');
+                return await res.json();
+            },
+            async addBook(data) {
+                const res = await fetch('/api/books', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!res.ok) throw new Error('Thêm sách thất bại!');
+                return await res.json();
+            },
+            async deleteBook(id) {
+                const res = await fetch(`/api/books/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('Xóa sách thất bại!');
+            },
+            async updateBook(id, data) {
+                const res = await fetch(`/api/books/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!res.ok) throw new Error('Cập nhật sách thất bại!');
+            },
+            async searchBooks(keyword) {
+                const res = await fetch(`/api/books/search?q=${encodeURIComponent(keyword)}`);
+                return await res.json();
+            },
+            async getSortedBooks() {
+                const res = await fetch('/api/books/sorted');
+                return await res.json();
+            }
+        };
+
+        async function renderBooks(books) {
+            const tbody = document.getElementById('books-tbody');
+            tbody.innerHTML = '';
+            if (books.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="5" style="text-align:center">Không có sách nào!</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+            for (const b of books) {
+                // Lấy điểm trung bình từng sách từ API
+                let avgHtml = '';
+                try {
+                    const res = await fetch(`/api/books/${b.id}/rating`);
+                    const { avg, count } = await res.json();
+                    avgHtml = count > 0 ? `${avg.toFixed(2)}★ (${count})` : 'Chưa có đánh giá';
+                } catch (e) {
+                    avgHtml = 'Không đọc được rating';
+                }
+                // Nếu sách đang mượn, show nút Trả, nếu available thì show nút Mượn
+                let btnBorrow = b.status === 'available'
+                    ? `<button onclick="onBorrowBook('${b.id}')">Mượn</button>`
+                    : `<button onclick="onReturnBook('${b.id}')">Trả</button>`;
+                // ... các nút sửa/xóa/review ...
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+            <td>${b.id}</td>
+            <td>${b.title}</td>
+            <td>${b.author}</td>
+            <td>${b.year}</td>
+            <td>
+                <button onclick="onEditBook('${b.id}', '${b.title.replace(/'/g, "\\'")}', '${b.author.replace(/'/g, "\\'")}', '${b.year.replace(/'/g, "\\'")}')">Sửa</button>
+                <button onclick="onDeleteBook('${b.id}')">Xóa</button>
+                ${btnBorrow}
+                <button onclick="openReviewSection('${b.id}')">Review</button>
+                <span class="avg-rating">Điểm TB: ${avgHtml}</span>
+            </td>`;
+                tbody.appendChild(tr);
+            }
+        }
+
+        // ==== UI Event handlers ====
+        async function refreshBooks() {
+            const books = await BookAPI.getBooks();
+            renderBooks(books);
+        }
+
+        async function onAddBook() {
+            const title = document.getElementById('title').value.trim();
+            const author = document.getElementById('author').value.trim();
+            const year = document.getElementById('year').value.trim();
+            if (!title || !author || !year) return alert('Vui lòng nhập đủ thông tin!');
+            try {
+                await BookAPI.addBook({ title, author, year });
+                document.getElementById('title').value = '';
+                document.getElementById('author').value = '';
+                document.getElementById('year').value = '';
+                await refreshBooks();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function onDeleteBook(id) {
+            if (!confirm('Bạn có chắc muốn xóa?')) return;
+            try {
+                await BookAPI.deleteBook(id);
+                await refreshBooks();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function onEditBook(id, oldTitle, oldAuthor, oldYear) {
+            const title = prompt('Tên mới:', oldTitle);
+            if (title === null) return;
+            const author = prompt('Tác giả mới:', oldAuthor);
+            if (author === null) return;
+            const year = prompt('Năm mới:', oldYear);
+            if (year === null) return;
+            try {
+                await BookAPI.updateBook(id, { title, author, year });
+                await refreshBooks();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function onSearchBook() {
+            const keyword = document.getElementById('search-keyword').value.trim();
+            if (!keyword) return alert('Nhập từ khóa!');
+            const books = await BookAPI.searchBooks(keyword);
+            renderBooks(books);
+        }
+
+        async function onSortBooks() {
+            const books = await BookAPI.getSortedBooks();
+            renderBooks(books);
+        }
+
+        // ==== Gắn sự kiện khi DOM sẵn sàng ====
+        window.onload = () => {
+            document.getElementById('add-btn').onclick = onAddBook;
+            document.getElementById('search-btn').onclick = onSearchBook;
+            document.getElementById('showall-btn').onclick = refreshBooks;
+            document.getElementById('sort-btn').onclick = onSortBooks;
+            refreshBooks();
+        };
+
+        // để các hàm event handler ở scope global cho gọi từ html (onclick)
+        window.onEditBook = onEditBook;
+        window.onDeleteBook = onDeleteBook;
+
+        // ==== REVIEW Feature ====
+        let currentBookId = null;
+
+        async function openReviewSection(bookId) {
+            currentBookId = bookId;
+            document.getElementById('review-section').style.display = 'block';
+            await loadReviews();
+        }
+
+        async function loadReviews() {
+            const res = await fetch(`/api/books/${currentBookId}/reviews`);
+            const arr = await res.json();
+            let html = '<ul>';
+            arr.forEach(r => {
+                html += `<li>${r.rating}★ - ${r.comment} <i style="color:#888">(Lúc: ${new Date(r.createdAt).toLocaleString()})</i></li>`;
+            });
+            html += '</ul>';
+            document.getElementById('reviews-list').innerHTML = html;
+        }
+
+        document.getElementById('review-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const rating = parseInt(document.getElementById('review-rating').value);
+            const comment = document.getElementById('review-comment').value.trim();
+            // Chưa có user login thì mặc định test userId
+            await fetch(`/api/books/${currentBookId}/reviews`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rating, comment })
+            });
+            document.getElementById('review-rating').value = '';
+            document.getElementById('review-comment').value = '';
+            await loadReviews();
+        };
+
+        document.getElementById('review-cancel').onclick = () => {
+            document.getElementById('review-section').style.display = 'none';
+            currentBookId = null;
+        };
+
+        async function onBorrowBook(bookId) {
+            // Nhập ngày phải trả hoặc mặc định 7 ngày
+            const dueDate = prompt('Nhập ngày hẹn trả (yyyy-mm-dd):', new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10));
+            // UserId: để mặc định khi chưa có login
+            await fetch(`/api/books/${bookId}/borrow`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: "000000000000000000000000", dueDate })
+            });
+            await refreshBooks();
+        }
+
+        async function onReturnBook(bookId) {
+            await fetch(`/api/books/${bookId}/return`, { method: 'POST' });
+            await refreshBooks();
+        }
+
+        async function showProfile() {
+            const userId = document.getElementById('profile-userid').value.trim();
+            // Lấy lịch sử
+            const res = await fetch(`/api/borrows?userId=${userId}`);
+            const arr = await res.json();
+            let html = '<h3>Lịch sử mượn/trả</h3><ul>';
+            arr.forEach(b => {
+                html += `<li>
+            <b>${b.bookId?.title || '[Đã xoá sách]'}</b> 
+            - Mượn: ${new Date(b.borrowedDate).toLocaleDateString()} 
+            - Hẹn trả: ${b.dueDate ? new Date(b.dueDate).toLocaleDateString() : 'Không có'}
+            - Đã trả: ${b.returnedDate ? new Date(b.returnedDate).toLocaleDateString() : "<span style='color:red'>Chưa trả</span>"}
+        </li>`;
+            });
+            html += '</ul>';
+            document.getElementById('profile-history').innerHTML = html;
+
+            // Lấy thống kê tổng
+            const resStats = await fetch('/api/borrows/stats');
+            const stats = await resStats.json();
+            document.getElementById('profile-stats').innerHTML = `
+        <h3>Thống kê toàn hệ thống</h3>
+        <ul>
+            <li>Tổng lượt mượn: <b>${stats.totalBorrows}</b></li>
+            <li>Tổng lượt đã trả: <b>${stats.totalReturned}</b></li>
+            <li>Sách đang có người mượn: <b>${stats.totalBorrowed}</b></li>
+        </ul>
+    `;
+        }
+
+    </script>
+</body>
+
+</html>

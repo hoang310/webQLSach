@@ -1,0 +1,65 @@
+body {
+    font-family: Arial;
+    max-width: 700px;
+    margin: 40px auto;
+    background: #f6f6f6;
+}
+
+h1 {
+    color: #003366;
+}
+
+input,
+button {
+    margin: 5px;
+    padding: 6px;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    background: white;
+}
+
+th,
+td {
+    border: 1px solid #ccc;
+    padding: 6px;
+}
+
+th {
+    background: #eaeaea;
+}
+
+button {
+    background: #0066ff;
+    color: white;
+    border: none;
+    border-radius: 3px;
+}
+
+button:hover {
+    background: #0055cc;
+}
+
+.avg-rating {
+    display: block;
+    margin-top: 5px;
+    font-size: 13px;
+    color: #d99f16;
+}
+
+#profile-section {
+    background: #fffbe8;
+    padding: 20px;
+    margin-top: 15px;
+    border-radius: 8px;
+}
+
+#profile-history ul {
+    list-style: decimal inside;
+}
+
+#profile-stats ul {
+    list-style: disc inside;
+}
